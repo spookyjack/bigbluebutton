@@ -13,7 +13,6 @@ const oldParameters = {
   displayBrandingArea: 'bbb_display_branding_area',
   enableScreensharing: 'bbb_enable_screen_sharing',
   enableVideo: 'bbb_enable_video',
-  enableVideoStats: 'bbb_enable_video_stats',
   forceListenOnly: 'bbb_force_listen_only',
   hidePresentation: 'bbb_hide_presentation',
   listenOnlyMode: 'bbb_listen_only_mode',
@@ -45,7 +44,6 @@ const currentParameters = [
   'bbb_preferred_camera_profile',
   'bbb_enable_screen_sharing',
   'bbb_enable_video',
-  'bbb_enable_video_stats',
   'bbb_skip_video_preview',
   // WHITEBOARD
   'bbb_multi_user_pen_only',
@@ -57,6 +55,7 @@ const currentParameters = [
   // LAYOUT
   'bbb_auto_swap_layout',
   'bbb_hide_presentation',
+  'bbb_show_participants_on_login',
   // OUTSIDE COMMANDS
   'bbb_outside_toggle_self_voice',
   'bbb_outside_toggle_recording',

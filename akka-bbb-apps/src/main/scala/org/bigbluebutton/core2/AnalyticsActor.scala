@@ -31,6 +31,8 @@ class AnalyticsActor extends Actor with ActorLogging {
 
     msg.core match {
       case m: GetAllMeetingsReqMsg                           => logMessage(msg)
+      case m: GetRunningMeetingsRespMsg                      => logMessage(msg)
+      case m: GetRunningMeetingsReqMsg                       => logMessage(msg)
 
       case m: RegisterUserReqMsg                             => logMessage(msg)
       case m: RegisteredUserJoinTimeoutMsg                   => logMessage(msg)
@@ -93,6 +95,8 @@ class AnalyticsActor extends Actor with ActorLogging {
       // Voice
       case m: UserMutedVoiceEvtMsg =>
         logMessage(msg)
+      case m: VoiceConfCallStateEvtMsg => logMessage(msg)
+      case m: VoiceCallStateEvtMsg => logMessage(msg)
 
       // Breakout
       case m: BreakoutRoomEndedEvtMsg => logMessage(msg)
@@ -118,6 +122,8 @@ class AnalyticsActor extends Actor with ActorLogging {
       // Guest Management
       case m: GuestsWaitingApprovedMsg => logMessage(msg)
       case m: GuestsWaitingApprovedEvtMsg => logMessage(msg)
+      case m: GuestWaitingLeftMsg => logMessage(msg)
+      case m: GuestWaitingLeftEvtMsg => logMessage(msg)
       case m: GuestsWaitingForApprovalEvtMsg => logMessage(msg)
       case m: SetGuestPolicyCmdMsg => logMessage(msg)
       case m: GuestPolicyChangedEvtMsg => logMessage(msg)

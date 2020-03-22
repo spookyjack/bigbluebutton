@@ -5,16 +5,19 @@ import VoiceUsers from '/imports/api/voice-users';
 import SIPBridge from '/imports/api/audio/client/bridge/sip';
 import logger from '/imports/startup/client/logger';
 import { notify } from '/imports/ui/services/notification';
-import browser from 'browser-detect';
 import playAndRetry from '/imports/utils/mediaElementPlayRetry';
 import iosWebviewAudioPolyfills from '/imports/utils/ios-webview-audio-polyfills';
 import { tryGenerateIceCandidates } from '/imports/utils/safari-webrtc';
+import { monitorAudioConnection } from '/imports/utils/stats';
 import AudioErrors from './error-codes';
+
+const ENABLE_NETWORK_MONITORING = Meteor.settings.public.networkMonitoring.enableNetworkMonitoring;
 
 const MEDIA = Meteor.settings.public.media;
 const MEDIA_TAG = MEDIA.mediaTag;
 const ECHO_TEST_NUMBER = MEDIA.echoTestNumber;
 const MAX_LISTEN_ONLY_RETRIES = 1;
+const LISTEN_ONLY_CALL_TIMEOUT_MS = 15000;
 
 const CALL_STATES = {
   STARTED: 'started',
@@ -49,6 +52,7 @@ class AudioManager {
     this.useKurento = Meteor.settings.public.kurento.enableListenOnly;
     this.failedMediaElements = [];
     this.handlePlayElementFailed = this.handlePlayElementFailed.bind(this);
+    this.monitor = this.monitor.bind(this);
   }
 
   init(userData) {
@@ -153,7 +157,6 @@ class AudioManager {
     this.isListenOnly = true;
     this.isEchoTest = false;
 
-    const { name } = browser();
     // The kurento bridge isn't a full audio bridge yet, so we have to differ it
     const bridge = this.useKurento ? this.listenOnlyBridge : this.bridge;
 
@@ -185,30 +188,36 @@ class AudioManager {
     }
 
     // We need this until we upgrade to SIP 9x. See #4690
-    const iceGatheringErr = 'ICE_TIMEOUT';
+    const listenOnlyCallTimeoutErr = this.useKurento ? 'KURENTO_CALL_TIMEOUT' : 'SIP_CALL_TIMEOUT';
+
     const iceGatheringTimeout = new Promise((resolve, reject) => {
-      setTimeout(reject, 12000, iceGatheringErr);
+      setTimeout(reject, LISTEN_ONLY_CALL_TIMEOUT_MS, listenOnlyCallTimeoutErr);
     });
 
-    const handleListenOnlyError = async (err) => {
-      const error = {
-        type: 'MEDIA_ERROR',
-        message: this.messages.error.MEDIA_ERROR,
-      };
+    const exitKurentoAudio = () => {
+      if (this.useKurento) {
+        window.kurentoExitAudio();
+        const audio = document.querySelector(MEDIA_TAG);
+        audio.muted = false;
+      }
+    };
 
+    const handleListenOnlyError = (err) => {
       if (iceGatheringTimeout) {
         clearTimeout(iceGatheringTimeout);
       }
 
+      const errorReason = (typeof err === 'string' ? err : undefined) || err.errorReason || err.errorMessage;
+      const bridgeInUse = (this.useKurento ? 'Kurento' : 'SIP');
+
       logger.error({
         logCode: 'audiomanager_listenonly_error',
         extraInfo: {
-          error: err,
+          errorReason,
+          audioBridge: bridgeInUse,
           retries,
         },
-      }, 'Listen only error');
-
-      throw error;
+      }, `Listen only error - ${err} - bridge: ${bridgeInUse}`);
     };
 
     logger.info({ logCode: 'audiomanager_join_listenonly', extraInfo: { logType: 'user_action' } }, 'user requested to connect to audio conference as listen only');
@@ -221,24 +230,28 @@ class AudioManager {
         iceGatheringTimeout,
       ]))
       .catch(async (err) => {
+        handleListenOnlyError(err);
+
         if (retries < MAX_LISTEN_ONLY_RETRIES) {
           // Fallback to SIP.js listen only in case of failure
           if (this.useKurento) {
-            // Exit previous SFU session and clean audio tag state
-            window.kurentoExitAudio();
+            exitKurentoAudio();
+
             this.useKurento = false;
-            const audio = document.querySelector(MEDIA_TAG);
-            audio.muted = false;
+
+            const errorReason = (typeof err === 'string' ? err : undefined) || err.errorReason || err.errorMessage;
+
+            logger.info({
+              logCode: 'audiomanager_listenonly_fallback',
+              extraInfo: {
+                logType: 'fallback',
+                errorReason,
+              },
+            }, `Falling back to FreeSWITCH listenOnly - cause: ${errorReason}`);
           }
 
-          try {
-            retries += 1;
-            await this.joinListenOnly(retries);
-          } catch (error) {
-            return handleListenOnlyError(error);
-          }
-        } else {
-          return handleListenOnlyError(err);
+          retries += 1;
+          this.joinListenOnly(retries);
         }
 
         return null;
@@ -298,6 +311,7 @@ class AudioManager {
       window.parent.postMessage({ response: 'joinedAudio' }, '*');
       this.notify(this.intl.formatMessage(this.messages.info.JOINED_AUDIO));
       logger.info({ logCode: 'audio_joined' }, 'Audio Joined');
+      if (ENABLE_NETWORK_MONITORING) this.monitor();
     }
   }
 
@@ -310,7 +324,6 @@ class AudioManager {
     this.isConnected = false;
     this.isConnecting = false;
     this.isHangingUp = false;
-    this.isListenOnly = false;
     this.autoplayBlocked = false;
     this.failedMediaElements = [];
 
@@ -364,7 +377,7 @@ class AudioManager {
             errorCode: error,
             cause: bridgeError,
           },
-        }, 'Audio Error');
+        }, `Audio error - errorCode=${error}, cause=${bridgeError}`);
         if (silenceNotifications !== true) {
           this.notify(errorMsg, true);
           this.exitAudio();
@@ -503,6 +516,12 @@ class AudioManager {
       error ? 'error' : 'info',
       audioIcon,
     );
+  }
+
+  monitor() {
+    const bridge = (this.useKurento && this.isListenOnly) ? this.listenOnlyBridge : this.bridge;
+    const peer = bridge.getPeerConnection();
+    monitorAudioConnection(peer);
   }
 
   handleAllowAutoplay() {

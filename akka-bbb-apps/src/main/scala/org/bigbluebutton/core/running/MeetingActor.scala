@@ -221,6 +221,7 @@ class MeetingActor(
 
     case m: EjectDuplicateUserReqMsg          => usersApp.handleEjectDuplicateUserReqMsg(m)
     case m: GetAllMeetingsReqMsg              => handleGetAllMeetingsReqMsg(m)
+    case m: GetRunningMeetingStateReqMsg      => handleGetRunningMeetingStateReqMsg(m)
     case m: ValidateConnAuthTokenSysMsg       => handleValidateConnAuthTokenSysMsg(m)
 
     // Meeting
@@ -384,6 +385,7 @@ class MeetingActor(
         state = updateInactivityTracker(state)
         updateVoiceUserLastActivity(m.body.voiceUserId)
         handleUserTalkingInVoiceConfEvtMsg(m)
+      case m: VoiceConfCallStateEvtMsg        => handleVoiceConfCallStateEvtMsg(m)
 
       case m: RecordingStartedVoiceConfEvtMsg => handleRecordingStartedVoiceConfEvtMsg(m)
       case m: MuteUserCmdMsg =>
@@ -455,6 +457,7 @@ class MeetingActor(
       case m: GetGuestsWaitingApprovalReqMsg           => handleGetGuestsWaitingApprovalReqMsg(m)
       case m: SetGuestPolicyCmdMsg                     => handleSetGuestPolicyMsg(m)
       case m: GuestsWaitingApprovedMsg                 => handleGuestsWaitingApprovedMsg(m)
+      case m: GuestWaitingLeftMsg                      => handleGuestWaitingLeftMsg(m)
       case m: GetGuestPolicyReqMsg                     => handleGetGuestPolicyReqMsg(m)
 
       // Chat
@@ -493,7 +496,11 @@ class MeetingActor(
     }
   }
 
-  def handleGetAllMeetingsReqMsg(msg: GetAllMeetingsReqMsg): Unit = {
+  def handleGetRunningMeetingStateReqMsg(msg: GetRunningMeetingStateReqMsg): Unit = {
+    processGetRunningMeetingStateReqMsg()
+  }
+
+  def processGetRunningMeetingStateReqMsg(): Unit = {
     // sync all meetings
     handleSyncGetMeetingInfoRespMsg(liveMeeting.props)
 
@@ -513,7 +520,10 @@ class MeetingActor(
     handleSyncGetLockSettingsMsg(state, liveMeeting, msgBus)
 
     // TODO send all screen sharing info
+  }
 
+  def handleGetAllMeetingsReqMsg(msg: GetAllMeetingsReqMsg): Unit = {
+    processGetRunningMeetingStateReqMsg()
   }
 
   def handlePresenterChange(msg: AssignPresenterReqMsg, state: MeetingState2x): MeetingState2x = {

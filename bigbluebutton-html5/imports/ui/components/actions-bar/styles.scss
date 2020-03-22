@@ -1,5 +1,9 @@
 @import "/imports/ui/stylesheets/variables/_all";
 
+:root {
+  --mobile-swap-offset: 3.5rem;
+}
+
 .actionsbar,
 .center,
 .right {
@@ -58,6 +62,17 @@
   }
 }
 
+.mobileLayoutSwapped {
+  @include mq($xsmall-only) {
+    padding-right: var(--mobile-swap-offset);
+
+    [dir="rtl"] & {
+      padding-right: 0;
+      padding-left: var(--mobile-swap-offset);
+    }
+  }
+}
+
 .button {
   span:first-child {
     box-shadow: 0 2px 5px 0 rgb(0, 0, 0);
@@ -69,5 +84,21 @@
     box-shadow: none;
     background-color: transparent !important;
     border-color: var(--color-white) !important;
+  }
+}
+
+.presentationItem {
+  span {
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 10rem;
+  }
+}
+
+.isCurrent {
+  i,
+  span {
+    color: var(--color-primary);
   }
 }
