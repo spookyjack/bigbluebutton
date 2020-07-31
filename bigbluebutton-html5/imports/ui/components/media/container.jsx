@@ -14,7 +14,7 @@ import PresentationPodsContainer from '../presentation-pod/container';
 import ScreenshareContainer from '../screenshare/container';
 import DefaultContent from '../presentation/default-content/component';
 import ExternalVideoContainer from '../external-video-player/container';
-import { getVideoId } from '../external-video-player/service';
+import Storage from '../../services/storage/session';
 
 const LAYOUT_CONFIG = Meteor.settings.public.layout;
 const KURENTO_CONFIG = Meteor.settings.public.kurento;
@@ -33,9 +33,9 @@ const intlMessages = defineMessages({
     id: 'app.media.screenshare.end',
     description: 'toast to show when a screenshare has ended',
   },
-  screenshareSafariNotSupportedError: {
-    id: 'app.media.screenshare.safariNotSupported',
-    description: 'Error message for screenshare not supported on Safari',
+  screenshareNotSupported: {
+    id: 'app.media.screenshare.notSupported',
+    description: 'Error message for screenshare not supported',
   },
   chromeExtensionError: {
     id: 'app.video.chromeExtensionError',
@@ -50,7 +50,7 @@ const intlMessages = defineMessages({
 class MediaContainer extends Component {
   componentWillMount() {
     document.addEventListener('installChromeExtension', this.installChromeExtension.bind(this));
-    document.addEventListener('safariScreenshareNotSupported', this.safariScreenshareNotSupported.bind(this));
+    document.addEventListener('screenshareNotSupported', this.screenshareNotSupported.bind(this));
   }
 
   componentWillReceiveProps(nextProps) {
@@ -70,7 +70,7 @@ class MediaContainer extends Component {
 
   componentWillUnmount() {
     document.removeEventListener('installChromeExtension', this.installChromeExtension.bind(this));
-    document.removeEventListener('safariScreenshareNotSupported', this.safariScreenshareNotSupported.bind(this));
+    document.removeEventListener('screenshareNotSupported', this.screenshareNotSupported.bind(this));
   }
 
   installChromeExtension() {
@@ -92,9 +92,9 @@ class MediaContainer extends Component {
     notify(chromeErrorElement, 'error', 'desktop');
   }
 
-  safariScreenshareNotSupported() {
+  screenshareNotSupported() {
     const { intl } = this.props;
-    notify(intl.formatMessage(intlMessages.screenshareSafariNotSupportedError), 'error', 'desktop');
+    notify(intl.formatMessage(intlMessages.screenshareNotSupported), 'error', 'desktop');
   }
 
   render() {
@@ -105,9 +105,11 @@ class MediaContainer extends Component {
 export default withModalMounter(withTracker(() => {
   const { dataSaving } = Settings;
   const { viewParticipantsWebcams, viewScreenshare } = dataSaving;
-  const hidePresentation = getFromUserSettings('hidePresentation', LAYOUT_CONFIG.hidePresentation);
+  const hidePresentation = getFromUserSettings('bbb_hide_presentation', LAYOUT_CONFIG.hidePresentation);
+  const autoSwapLayout = getFromUserSettings('userdata-bbb_auto_swap_layout', LAYOUT_CONFIG.autoSwapLayout);
+  const { current_presentation: hasPresentation } = MediaService.getPresentationInfo();
   const data = {
-    children: <DefaultContent />,
+    children: <DefaultContent {...{ autoSwapLayout, hidePresentation }} />,
     audioModalIsOpen: Session.get('audioModalIsOpen'),
     userWasInWebcam: Session.get('userWasInWebcam'),
     joinVideo: VideoService.joinVideo,
@@ -122,15 +124,18 @@ export default withModalMounter(withTracker(() => {
     data.children = <ScreenshareContainer />;
   }
 
-  const usersVideo = VideoService.getAllUsersVideo();
+  const usersVideo = VideoService.getAllWebcamUsers();
   data.usersVideo = usersVideo;
+
   if (MediaService.shouldShowOverlay() && usersVideo.length && viewParticipantsWebcams) {
     data.floatingOverlay = usersVideo.length < 2;
     data.hideOverlay = usersVideo.length === 0;
   }
 
+  data.singleWebcam = (usersVideo.length < 2);
+
   data.isScreensharing = MediaService.isVideoBroadcasting();
-  data.swapLayout = getSwapLayout() && shouldEnableSwapLayout();
+  data.swapLayout = (getSwapLayout() || !hasPresentation) && shouldEnableSwapLayout();
   data.disableVideo = !viewParticipantsWebcams;
 
   if (data.swapLayout) {
@@ -142,10 +147,11 @@ export default withModalMounter(withTracker(() => {
     data.children = (
       <ExternalVideoContainer
         isPresenter={MediaService.isUserPresenter()}
-        videoId={getVideoId()}
       />
     );
   }
+
+  data.webcamPlacement = Storage.getItem('webcamPlacement');
 
   MediaContainer.propTypes = propTypes;
   return data;

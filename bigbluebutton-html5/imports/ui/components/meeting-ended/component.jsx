@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { PureComponent } from 'react';
 import PropTypes from 'prop-types';
 import { defineMessages, injectIntl } from 'react-intl';
 import { Meteor } from 'meteor/meteor';
@@ -9,6 +9,8 @@ import logoutRouteHandler from '/imports/utils/logoutRouteHandler';
 import Rating from './rating/component';
 import { styles } from './styles';
 import logger from '/imports/startup/client/logger';
+import Users from '/imports/api/users';
+import AudioManager from '/imports/ui/services/audio-manager';
 
 const intlMessage = defineMessages({
   410: {
@@ -88,7 +90,7 @@ const propTypes = {
   code: PropTypes.string.isRequired,
 };
 
-class MeetingEnded extends React.PureComponent {
+class MeetingEnded extends PureComponent {
   static getComment() {
     const textarea = document.getElementById('feedbackComment');
     const comment = textarea.value;
@@ -100,12 +102,17 @@ class MeetingEnded extends React.PureComponent {
     this.state = {
       selected: 0,
     };
+
+    const user = Users.findOne({ userId: Auth.userID });
+    if (user) {
+      this.localUserRole = user.role;
+    }
+
     this.setSelectedStar = this.setSelectedStar.bind(this);
     this.sendFeedback = this.sendFeedback.bind(this);
-    this.shouldShowFeedback = getFromUserSettings('askForFeedbackOnLogout', Meteor.settings.public.app.askForFeedbackOnLogout);
-  }
+    this.shouldShowFeedback = getFromUserSettings('bbb_ask_for_feedback_on_logout', Meteor.settings.public.app.askForFeedbackOnLogout);
 
-  componentDidMount() {
+    AudioManager.exitAudio();
     Meteor.disconnect();
   }
 
@@ -125,12 +132,16 @@ class MeetingEnded extends React.PureComponent {
       return;
     }
 
+    const { fullname } = Auth.credentials;
+
     const message = {
       rating: selected,
       userId: Auth.userID,
+      userName: fullname,
       authToken: Auth.token,
       meetingId: Auth.meetingID,
       comment: MeetingEnded.getComment(),
+      userRole: this.localUserRole,
     };
     const url = '/html5client/feedback';
     const options = {

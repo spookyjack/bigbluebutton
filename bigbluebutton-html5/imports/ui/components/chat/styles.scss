@@ -19,14 +19,26 @@
 
 .chat {
   background-color: var(--color-white);
-  padding: var(--md-padding-x);
+  padding:
+    var(--md-padding-x)
+    var(--md-padding-y)
+    var(--md-padding-x)
+    var(--md-padding-x);
+
   display: flex;
   flex-grow: 1;
   flex-direction: column;
   justify-content: space-around;
   overflow: hidden;
   height: 100vh;
-  transform: translateZ(0);
+
+  :global(.browser-chrome) & {
+    transform: translateZ(0);
+  }
+    
+  @include mq($small-only) {
+    transform: none !important;
+  }
 }
 
 .header {

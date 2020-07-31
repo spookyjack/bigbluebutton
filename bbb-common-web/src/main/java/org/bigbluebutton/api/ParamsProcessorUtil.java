@@ -24,14 +24,9 @@ import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.SortedSet;
-import java.util.TreeSet;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -103,6 +98,7 @@ public class ParamsProcessorUtil {
 		private boolean defaultLockSettingsDisablePrivateChat;
 		private boolean defaultLockSettingsDisablePublicChat;
 		private boolean defaultLockSettingsDisableNote;
+		private boolean defaultLockSettingsHideUserList;
 		private boolean defaultLockSettingsLockedLayout;
 		private boolean defaultLockSettingsLockOnJoin;
 		private boolean defaultLockSettingsLockOnJoinConfigurable;
@@ -121,6 +117,22 @@ public class ParamsProcessorUtil {
     private Integer userActivitySignResponseDelayInMinutes = 5;
     private Boolean defaultAllowDuplicateExtUserid = true;
 
+	private String formatConfNum(String s) {
+		if (s.length() > 5) {
+			/* Reverse conference number.
+			* Put a whitespace every third char.
+			* Reverse it again to display it correctly.
+			* Trim leading whitespaces.
+			* */
+			String confNumReversed = new StringBuilder(s).reverse().toString();
+			String confNumSplit = confNumReversed.replaceAll("(.{3})", "$1 ");
+			String confNumL = new StringBuilder(confNumSplit).reverse().toString().trim();
+			return confNumL;
+		}
+
+		return s;
+	}
+
     private String substituteKeywords(String message, String dialNumber, String telVoice, String meetingName) {
         String welcomeMessage = message;
 
@@ -134,7 +146,7 @@ public class ParamsProcessorUtil {
             if (keyword.equals(DIAL_NUM)) {
                 welcomeMessage = welcomeMessage.replaceAll(DIAL_NUM, dialNumber);
             } else if (keyword.equals(CONF_NUM)) {
-                welcomeMessage = welcomeMessage.replaceAll(CONF_NUM, telVoice);
+                welcomeMessage = welcomeMessage.replaceAll(CONF_NUM, formatConfNum(telVoice));
             } else if (keyword.equals(CONF_NAME)) {
                 welcomeMessage = welcomeMessage.replaceAll(CONF_NAME, meetingName);
             } else if (keyword.equals(SERVER_URL)) {
@@ -279,6 +291,12 @@ public class ParamsProcessorUtil {
 				lockSettingsDisableNote = Boolean.parseBoolean(lockSettingsDisableNoteParam);
 			}
 
+			Boolean lockSettingsHideUserList = defaultLockSettingsHideUserList;
+			String lockSettingsHideUserListParam = params.get(ApiParams.LOCK_SETTINGS_HIDE_USER_LIST);
+			if (!StringUtils.isEmpty(lockSettingsHideUserListParam)) {
+				lockSettingsHideUserList = Boolean.parseBoolean(lockSettingsHideUserListParam);
+			}
+
 			Boolean lockSettingsLockedLayout = defaultLockSettingsLockedLayout;
 			String lockSettingsLockedLayoutParam = params.get(ApiParams.LOCK_SETTINGS_LOCKED_LAYOUT);
 			if (!StringUtils.isEmpty(lockSettingsLockedLayoutParam)) {
@@ -302,6 +320,7 @@ public class ParamsProcessorUtil {
 							lockSettingsDisablePrivateChat,
 							lockSettingsDisablePublicChat,
 							lockSettingsDisableNote,
+							lockSettingsHideUserList,
 							lockSettingsLockedLayout,
 							lockSettingsLockOnJoin,
 							lockSettingsLockOnJoinConfigurable);
@@ -314,7 +333,7 @@ public class ParamsProcessorUtil {
             meetingName = "";
         }
 
-        meetingName = ParamsUtil.stripControlChars(meetingName);
+        meetingName = ParamsUtil.stripHTMLTags(ParamsUtil.stripControlChars(meetingName));
 
         String externalMeetingId = params.get(ApiParams.MEETING_ID);
 
@@ -617,7 +636,7 @@ public class ParamsProcessorUtil {
 	public boolean hasChecksumAndQueryString(String checksum, String queryString) {
 		return (! StringUtils.isEmpty(checksum) && StringUtils.isEmpty(queryString));
 	}
-		
+
 	public String processTelVoice(String telNum) {
 		return StringUtils.isEmpty(telNum) ? RandomStringUtils.randomNumeric(defaultNumDigitsForTelVoice) : telNum;
 	}
@@ -1095,6 +1114,10 @@ public class ParamsProcessorUtil {
 
 	public void setLockSettingsDisableNote(Boolean lockSettingsDisableNote) {
 		this.defaultLockSettingsDisableNote = lockSettingsDisableNote;
+	}
+
+	public void setLockSettingsHideUserList(Boolean lockSettingsHideUserList) {
+		this.defaultLockSettingsHideUserList = lockSettingsHideUserList;
 	}
 
 	public void setLockSettingsLockedLayout(Boolean lockSettingsLockedLayout) {

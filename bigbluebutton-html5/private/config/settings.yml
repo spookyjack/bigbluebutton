@@ -3,15 +3,14 @@ public:
     mobileFontSize: 16px
     desktopFontSize: 14px
     audioChatNotification: false
-    showParticipantsOnLogin: true
     autoJoin: true
     listenOnlyMode: true
     forceListenOnly: false
     skipCheck: false
     clientTitle: BigBlueButton
     appName: BigBlueButton HTML5 Client
-    bbbServerVersion: 2.2-dev
-    copyright: "©2019 BigBlueButton Inc."
+    bbbServerVersion: 2.2
+    copyright: "©2020 BigBlueButton Inc."
     html5ClientBuild: HTML5_CLIENT_VERSION
     helpLink: https://bigbluebutton.org/html5/
     lockOnJoin: true
@@ -21,14 +20,21 @@ public:
     allowUserLookup: false
     enableNetworkInformation: false
     enableLimitOfViewersInWebcam: false
+    enableTalkingIndicator: true
+    mirrorOwnWebcam: false
     viewersInWebcam: 8
     ipv4FallbackDomain: ""
     allowLogout: true
+    allowFullscreen: true
+    remainingTimeThreshold: 30
+    remainingTimeAlertThreshold: 1
     defaultSettings:
       application:
         animations: true
         chatAudioAlerts: false
         chatPushAlerts: false
+        userJoinAudioAlerts: false
+        userJoinPushAlerts: false
         fallbackLocale: en
         overrideLocale: null
       audio:
@@ -37,13 +43,6 @@ public:
       dataSaving:
         viewParticipantsWebcams: true
         viewScreenshare: true
-      participants:
-        muteAll: false
-        lockAll: false
-        microphone: false
-        publicChat: false
-        privateChat: false
-        layout: false
     shortcuts:
       openOptions:
         accesskey: O
@@ -72,9 +71,6 @@ public:
       openActions:
         accesskey: A
         descId: openActions
-      openStatus:
-        accesskey: S
-        descId: openStatus
     branding:
       displayBrandingArea: false
     connectionTimeout: 60000
@@ -90,50 +86,51 @@ public:
     packetLostThreshold: 10
   kurento:
     wsUrl: HOST
+    # Valid for video-provider. Time (ms) before its WS connection times out
+    # and tries to reconnect.
+    wsConnectionTimeout: 4000
+    cameraTimeouts:
+      # Base camera timeout: used as the camera *sharing* timeout and
+      # as the minimum camera subscribe reconnection timeout
+      baseTimeout: 15000
+      # Max timeout: used as the max camera subscribe reconnection timeout. Each
+      # subscribe reattempt increases the reconnection timer up to this
+      maxTimeout: 60000
     chromeDefaultExtensionKey: akgoaoikmbmhcopjgakkcepdgdgkjfbc
     chromeDefaultExtensionLink: https://chrome.google.com/webstore/detail/bigbluebutton-screenshare/akgoaoikmbmhcopjgakkcepdgdgkjfbc
     chromeExtensionKey: KEY
     chromeExtensionLink: LINK
-    chromeScreenshareSources:
-    - window
-    - screen
-    firefoxScreenshareSource: window
+    screenshare:
+      constraints:
+        video:
+          frameRate:
+            ideal: 5
+            max: 10
+          width:
+            max: 2560
+          height:
+            max: 1600
+        audio: false
+      chromeScreenshareSources:
+        - window
+        - screen
+      firefoxScreenshareSource: window
     cameraProfiles:
       - id: low
         name: Low quality
         default: false
-        constraints:
-          width:
-            max: 160
-          height:
-            max: 120
         bitrate: 100
       - id: medium
         name: Medium quality
         default: true
-        constraints:
-          width:
-            max: 320
-          height:
-            max: 240
         bitrate: 200
       - id: high
         name: High quality
         default: false
-        constraints:
-          width:
-            max: 640
-          height:
-            max: 480
         bitrate: 500
       - id: hd
         name: High definition
         default: false
-        constraints:
-          width:
-            max: 1280
-          height:
-            max: 960
         bitrate: 800
     enableScreensharing: true
     enableVideo: true
@@ -141,6 +138,10 @@ public:
     enableVideoMenu: true
     enableListenOnly: true
     autoShareWebcam: false
+    skipVideoPreview: false
+  pingPong:
+    clearUsersInSeconds: 180
+    pongTimeInSeconds: 15
   allowOutsideCommands:
     toggleRecording: false
     toggleSelfVoice: false
@@ -159,6 +160,7 @@ public:
     time: 5000
   chat:
     enabled: true
+    startClosed: false
     min_message_length: 1
     max_message_length: 5000
     grouping_messages_window: 10000
@@ -174,6 +176,8 @@ public:
     storage_key: UNREAD_CHATS
     system_messages_keys:
       chat_clear: PUBLIC_CHAT_CLEAR
+    typingIndicator:
+      enabled: true
   note:
     enabled: false
     url: ETHERPAD_HOST
@@ -188,13 +192,19 @@ public:
     hidePresentation: false
   media:
     stunTurnServersFetchAddress: "/bigbluebutton/api/stuns"
+    cacheStunTurnServers: true
+    fallbackStunServer:  ''
     mediaTag: "#remote-media"
     callTransferTimeout: 5000
     callHangupTimeout: 2000
     callHangupMaximumRetries: 10
-    echoTestNumber: '9196'
+    echoTestNumber: 'echo'
+    relayOnlyOnReconnect: false
+    listenOnlyCallTimeout: 15000
   presentation:
     defaultPresentationFile: default.pdf
+    panZoomThrottle: 32
+    restoreOnUpdate: false
     uploadEndpoint: "/bigbluebutton/presentation/upload"
     uploadSizeMin: 0
     uploadSizeMax: 50000000
@@ -230,6 +240,8 @@ public:
     - extension: .odi
       mime: application/vnd.oasis.opendocument.image
     - extension: .jpg
+      mime: image/jpeg
+    - extension: .jpeg
       mime: image/jpeg
     - extension: .png
       mime: image/png
@@ -319,7 +331,7 @@ public:
   clientLog:
     server: { enabled: true, level: info }
     console: { enabled: true, level: debug }
-    external: { enabled: false, level: info, url: https://LOG_HOST/html5Log, method: POST, throttleInterval: 400, flushOnClose: true }
+    external: { enabled: false, level: info, url: https://LOG_HOST/html5Log, method: POST, throttleInterval: 400, flushOnClose: true, logTag: "" }
 private:
   app:
     host: 127.0.0.1
@@ -353,6 +365,14 @@ private:
     - DoLatencyTracerMsg
   serverLog:
     level: info
+    streamerLog: false
+  memoryMonitoring:
+    stat:
+      enabled: false
+    leak:
+      enabled: false
+    heapdump:
+      enabled: false
   minBrowserVersions:
     - browser: chrome
       version: 59

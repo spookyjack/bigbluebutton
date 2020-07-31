@@ -16,6 +16,7 @@ const makeEnvelope = (channel, eventName, header, body, routing) => {
         sender: 'bbb-apps-akka',
         // sender: 'html5-server', // TODO
       },
+      timestamp: Date.now(),
     },
     core: {
       header,
@@ -238,6 +239,9 @@ class RedisPubSub {
       userId,
     };
 
+    if (!meetingId || !userId) {
+      Logger.warn(`Publishing ${eventName} with potentially missing data userId=${userId} meetingId=${meetingId}`);
+    }
     const envelope = makeEnvelope(channel, eventName, header, payload, { meetingId, userId });
 
     return this.pub.publish(channel, envelope, RedisPubSub.handlePublishError);

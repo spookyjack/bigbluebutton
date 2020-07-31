@@ -2,22 +2,49 @@ import { Meteor } from 'meteor/meteor';
 import { WebAppInternals } from 'meteor/webapp';
 import Langmap from 'langmap';
 import fs from 'fs';
+import heapdump from 'heapdump';
 import Users from '/imports/api/users';
 import './settings';
 import { lookup as lookupUserAgent } from 'useragent';
+import { check } from 'meteor/check';
+import memwatch from 'memwatch-next';
 import Logger from './logger';
 import Redis from './redis';
 import setMinBrowserVersions from './minBrowserVersion';
 import userLeaving from '/imports/api/users/server/methods/userLeaving';
 
-const parse = Npm.require('url').parse;
-const INTERVAL_TIME = 30000;
 const AVAILABLE_LOCALES = fs.readdirSync('assets/app/locales');
 
 Meteor.startup(() => {
   const APP_CONFIG = Meteor.settings.public.app;
+  const INTERVAL_IN_SETTINGS = (Meteor.settings.public.pingPong.clearUsersInSeconds) * 1000;
+  const INTERVAL_TIME = INTERVAL_IN_SETTINGS < 10000 ? 10000 : INTERVAL_IN_SETTINGS;
   const env = Meteor.isDevelopment ? 'development' : 'production';
   const CDN_URL = APP_CONFIG.cdn;
+  let heapDumpMbThreshold = 100;
+
+  const memoryMonitoringSettings = Meteor.settings.private.memoryMonitoring;
+  if (memoryMonitoringSettings.stat.enabled) {
+    memwatch.on('stats', (stats) => {
+      let heapDumpTriggered = false;
+
+      if (memoryMonitoringSettings.heapdump.enabled) {
+        heapDumpTriggered = (stats.current_base / 1048576) > heapDumpMbThreshold;
+      }
+      Logger.info('memwatch stats', { ...stats, heapDumpEnabled: memoryMonitoringSettings.heapdump.enabled, heapDumpTriggered });
+
+      if (heapDumpTriggered) {
+        heapdump.writeSnapshot(`./heapdump-stats-${Date.now()}.heapsnapshot`);
+        heapDumpMbThreshold += 100;
+      }
+    });
+  }
+
+  if (memoryMonitoringSettings.leak.enabled) {
+    memwatch.on('leak', (info) => {
+      Logger.info('memwatch leak', info);
+    });
+  }
 
   if (CDN_URL.trim()) {
     // Add CDN
@@ -61,10 +88,9 @@ Meteor.startup(() => {
     Logger.info('Removing inactive users');
     users.forEach((user) => {
       Logger.info(`Detected inactive user, userId:${user.userId}, meetingId:${user.meetingId}`);
-      user.requesterUserId = user.userId;
-      return userLeaving(user, user.userId, user.connectionId);
+      return userLeaving(user.meetingId, user.userId, user.connectionId);
     });
-    return Logger.info('All inactive user have been removed');
+    return Logger.info('All inactive users have been removed');
   }, INTERVAL_TIME);
 
   Logger.warn(`SERVER STARTED.\nENV=${env},\nnodejs version=${process.version}\nCDN=${CDN_URL}\n`, APP_CONFIG);
@@ -82,7 +108,9 @@ WebApp.connectHandlers.use('/locale', (req, res) => {
   const APP_CONFIG = Meteor.settings.public.app;
   const fallback = APP_CONFIG.defaultSettings.application.fallbackLocale;
   const override = APP_CONFIG.defaultSettings.application.overrideLocale;
-  const browserLocale = override ? override.split(/[-_]/g) : req.query.locale.split(/[-_]/g);
+  const browserLocale = override && req.query.init === 'true'
+    ? override.split(/[-_]/g) : req.query.locale.split(/[-_]/g);
+
   const localeList = [fallback];
 
   const usableLocales = AVAILABLE_LOCALES
@@ -145,7 +173,17 @@ WebApp.connectHandlers.use('/feedback', (req, res) => {
       meetingId,
       userId,
       authToken,
+      userName: reqUserName,
+      comment,
+      rating,
     } = body;
+
+    check(meetingId, String);
+    check(userId, String);
+    check(authToken, String);
+    check(reqUserName, String);
+    check(comment, String);
+    check(rating, Number);
 
     const user = Users.findOne({
       meetingId,
@@ -155,24 +193,19 @@ WebApp.connectHandlers.use('/feedback', (req, res) => {
     });
 
     if (!user) {
-      Logger.error(`Feedback failed, user with id=${userId} wasn't found`);
-      res.setHeader('Content-Type', 'application/json');
-      res.writeHead(500);
-      res.end(JSON.stringify({ status: 'ok' }));
-      return;
+      Logger.warn('Couldn\'t find user for feedback');
     }
 
-    const feedback = {
-      userName: user.name,
-      ...body,
-    };
-    Logger.info('FEEDBACK LOG:', feedback);
-  }));
-
-  req.on('end', Meteor.bindEnvironment(() => {
     res.setHeader('Content-Type', 'application/json');
     res.writeHead(200);
     res.end(JSON.stringify({ status: 'ok' }));
+
+    body.userName = user ? user.name : `[unconfirmed] ${reqUserName}`;
+
+    const feedback = {
+      ...body,
+    };
+    Logger.info('FEEDBACK LOG:', feedback);
   }));
 });
 

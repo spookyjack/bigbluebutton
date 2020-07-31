@@ -3,8 +3,13 @@ import { makeCall } from '/imports/ui/services/api';
 import Auth from '/imports/ui/services/auth';
 import Meetings from '/imports/api/meetings/';
 import Users from '/imports/api/users/';
-import mapUser from '/imports/ui/services/user/mapUser';
+import VideoStreams from '/imports/api/video-streams/';
 import UserListService from '/imports/ui/components/user-list/service';
+import getFromUserSettings from '/imports/ui/services/users-settings';
+
+const ROLE_MODERATOR = Meteor.settings.public.user.role_moderator;
+const ROLE_VIEWER = Meteor.settings.public.user.role_viewer;
+const MIRROR_WEBCAM = Meteor.settings.public.app.mirrorOwnWebcam;
 
 class VideoService {
   constructor() {
@@ -70,51 +75,76 @@ class VideoService {
     makeCall('userUnshareWebcam', stream);
   }
 
-  getAllUsers() {
-    // Use the same function as the user-list to share the sorting/mapping
-    return UserListService.getUsers();
-  }
-
-  getAllUsersVideo() {
-    const userId = this.userId();
-    const isLocked = this.isLocked();
-    const currentUser = Users.findOne({ userId });
-    const currentUserIsModerator = mapUser(currentUser).isModerator;
+  getAllWebcamUsers() {
+    const webcamsLocked = this.webcamsLocked();
+    const webcamsOnlyForModerator = this.webcamsOnlyForModerator();
+    const currentUser = Users.findOne({ userId: Auth.userID });
+    const currentUserIsViewer = currentUser.role === ROLE_VIEWER;
     const sharedWebcam = this.isSharing;
+    const videoStreams = VideoStreams.find({ meetingId: Auth.meetingID },
+      { fields: { userId: 1 } }).fetch();
 
-    const isSharingWebcam = user => user.isSharingWebcam || (sharedWebcam && user.isCurrent);
-    const isNotLocked = user => !(isLocked && user.isLocked);
+    const videoUserIds = videoStreams.map(u => u.userId);
 
-    const isWebcamOnlyModerator = this.webcamOnlyModerator();
-    const allowedSeeViewersWebcams = !isWebcamOnlyModerator || currentUserIsModerator;
-    const webcamOnlyModerator = (user) => {
-      if (allowedSeeViewersWebcams) return true;
-      return user.isModerator || user.isCurrent;
-    };
+    let users = Users
+      .find({
+        meetingId: Auth.meetingID,
+        connectionStatus: 'online',
+        $and: [
+          { userId: { $ne: Auth.userID } },
+          { userId: { $in: videoUserIds } },
+        ],
+      },
+      {
+        fields: {
+          name: 1,
+          userId: 1,
+          role: 1,
+          emoji: 1,
+          clientType: 1,
+        },
+      }).fetch();
 
-    return this.getAllUsers()
-      .filter(isSharingWebcam)
-      .filter(isNotLocked)
-      .filter(webcamOnlyModerator);
+    const userIsNotLocked = user => user.role === ROLE_MODERATOR || !user.locked;
+
+    if (webcamsLocked) {
+      users = users.filter(userIsNotLocked);
+    }
+
+    const userIsModerator = user => user.role === ROLE_MODERATOR;
+
+    if ((webcamsOnlyForModerator) && currentUserIsViewer) {
+      users = users.filter(userIsModerator);
+    }
+
+    if (sharedWebcam) {
+      users.unshift(currentUser);
+    }
+
+    return users.sort(UserListService.sortUsers);
   }
 
-  webcamOnlyModerator() {
-    const m = Meetings.findOne({ meetingId: Auth.meetingID }) || {};
+  webcamsOnlyForModerator() {
+    const m = Meetings.findOne({ meetingId: Auth.meetingID },
+      { fields: { 'usersProp.webcamsOnlyForModerator': 1 } });
     return m.usersProp ? m.usersProp.webcamsOnlyForModerator : false;
   }
 
-  isLocked() {
-    const m = Meetings.findOne({ meetingId: Auth.meetingID }) || {};
+  webcamsLocked() {
+    const m = Meetings.findOne({ meetingId: Auth.meetingID },
+      { fields: { 'lockSettingsProps.disableCam': 1 } });
     return m.lockSettingsProps ? m.lockSettingsProps.disableCam : false;
+  }
+
+  mirrorOwnWebcam(user) {
+    // only true if setting defined and video ids match
+    const isOwnWebcam = user ? this.userId() === user.userId : true;
+    const isEnabledMirroring = getFromUserSettings('bbb_mirror_own_webcam', MIRROR_WEBCAM);
+    return isOwnWebcam && isEnabledMirroring;
   }
 
   userId() {
     return Auth.userID;
-  }
-
-  userName() {
-    const currentUser = Users.findOne({ userId: Auth.userID });
-    return currentUser.name;
   }
 
   meetingId() {
@@ -126,7 +156,8 @@ class VideoService {
   }
 
   voiceBridge() {
-    const m = Meetings.findOne({ meetingId: Auth.meetingID }) || {};
+    const m = Meetings.findOne({ meetingId: Auth.meetingID },
+      { fields: { 'voiceProp.voiceConf': 1 } });
     return m.voiceProp ? m.voiceProp.voiceConf : null;
   }
 
@@ -145,9 +176,8 @@ export default {
   exitVideo: () => videoService.exitVideo(),
   exitingVideo: () => videoService.exitingVideo(),
   exitedVideo: () => videoService.exitedVideo(),
-  getAllUsers: () => videoService.getAllUsers(),
+  webcamsLocked: () => videoService.webcamsLocked(),
   webcamOnlyModerator: () => videoService.webcamOnlyModerator(),
-  isLocked: () => videoService.isLocked(),
   isSharing: () => videoService.isSharing,
   isConnected: () => videoService.isConnected,
   isWaitingResponse: () => videoService.isWaitingResponse,
@@ -156,10 +186,9 @@ export default {
   joinedVideo: () => videoService.joinedVideo(),
   sendUserShareWebcam: stream => videoService.sendUserShareWebcam(stream),
   sendUserUnshareWebcam: stream => videoService.sendUserUnshareWebcam(stream),
-  userId: () => videoService.userId(),
-  userName: () => videoService.userName(),
+  mirrorOwnWebcam: user => videoService.mirrorOwnWebcam(user),
   meetingId: () => videoService.meetingId(),
-  getAllUsersVideo: () => videoService.getAllUsersVideo(),
+  getAllWebcamUsers: () => videoService.getAllWebcamUsers(),
   sessionToken: () => videoService.sessionToken(),
   voiceBridge: () => videoService.voiceBridge(),
 };

@@ -38,13 +38,14 @@ const getResponseString = (obj) => {
   if (typeof children !== 'string') {
     return getResponseString(children[1]);
   }
+
   return children;
 };
 
 class LiveResult extends PureComponent {
   static getDerivedStateFromProps(nextProps) {
     const {
-      currentPoll, getUser, intl, pollAnswerIds,
+      currentPoll, intl, pollAnswerIds,
     } = nextProps;
 
     if (!currentPoll) return null;
@@ -57,10 +58,10 @@ class LiveResult extends PureComponent {
       ? [...users, ...responses.map(u => u.userId)]
       : [...users];
 
-    userAnswers = userAnswers.map(id => getUser(id))
+    userAnswers = userAnswers.map(id => Service.getUser(id))
       .filter(user => user.connectionStatus === 'online')
       .map((user) => {
-        let answer = '-';
+        let answer = '';
 
         if (responses) {
           const response = responses.find(r => r.userId === user.userId);
@@ -142,7 +143,6 @@ class LiveResult extends PureComponent {
     const {
       isMeteorConnected,
       intl,
-      publishPoll,
       stopPoll,
       handleBackClick,
       currentPoll,
@@ -158,7 +158,7 @@ class LiveResult extends PureComponent {
       userCount = userAnswers.length;
       userAnswers.map((user) => {
         const response = getResponseString(user);
-        if (response === '-') return user;
+        if (response === '') return user;
         respondedCount += 1;
         return user;
       });
@@ -190,7 +190,7 @@ class LiveResult extends PureComponent {
             <Button
               disabled={!isMeteorConnected}
               onClick={() => {
-                publishPoll();
+                Service.publishPoll();
                 stopPoll();
               }}
               label={intl.formatMessage(intlMessages.publishLabel)}
@@ -238,7 +238,6 @@ LiveResult.propTypes = {
       users: PropTypes.arrayOf(PropTypes.string),
     }),
   ]),
-  publishPoll: PropTypes.func.isRequired,
   stopPoll: PropTypes.func.isRequired,
   handleBackClick: PropTypes.func.isRequired,
 };

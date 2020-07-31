@@ -1,6 +1,6 @@
 import Auth from '/imports/ui/services/auth';
 import { check } from 'meteor/check';
-import { notify } from '/imports/ui/services/notification';
+import logger from '/imports/startup/client/logger';
 
 /**
  * Send the request to the server via Meteor.call and don't treat errors.
@@ -13,11 +13,11 @@ import { notify } from '/imports/ui/services/notification';
 export function makeCall(name, ...args) {
   check(name, String);
 
-  const { credentials } = Auth;
+  // const { credentials } = Auth;
 
   return new Promise((resolve, reject) => {
     if (Meteor.status().connected) {
-      Meteor.call(name, credentials, ...args, (error, result) => {
+      Meteor.call(name, ...args, (error, result) => {
         if (error) {
           reject(error);
         }
@@ -25,37 +25,20 @@ export function makeCall(name, ...args) {
         resolve(result);
       });
     } else {
-      reject(new Error('Meteor was not connected'));
+      const failureString = `Call to ${name} failed because Meteor is not connected`;
+      // We don't want to send a log message if the call that failed was a log message.
+      // Without this you can get into an endless loop of failed logging.
+      if (name !== 'logClient') {
+        logger.warn({
+          logCode: 'servicesapiindex_makeCall',
+          extraInfo: {
+            attemptForUserInfo: Auth.fullInfo,
+            name,
+            ...args,
+          },
+        }, failureString);
+      }
+      reject(failureString);
     }
-  });
-}
-
-/**
- * Send the request to the server via Meteor.call and treat the error to a default callback.
- *
- * @param {string} name
- * @param {any} args
- * @see https://docs.meteor.com/api/methods.html#Meteor-call
- * @return {Promise}
- */
-export function call(name, ...args) {
-  return makeCall(name, ...args).catch((e) => {
-    notify(`Ops! Error while executing ${name}`, 'error');
-    throw e;
-  });
-}
-
-export function log(type = 'error', message, ...args) {
-  const { credentials } = Auth;
-
-  const logContents = { ...args };
-  const topic = logContents[0] ? logContents[0].topic : null;
-
-  const messageOrStack = message.stack || message.message || JSON.stringify(message);
-  console.debug(`CLIENT LOG (${topic ? `${type.toUpperCase()}.${topic}` : type.toUpperCase()}): `, messageOrStack, ...args);
-
-  Meteor.call('logClient', type, messageOrStack, {
-    credentials,
-    ...args,
   });
 }

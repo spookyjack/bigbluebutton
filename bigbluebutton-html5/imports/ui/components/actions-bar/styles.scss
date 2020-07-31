@@ -1,19 +1,46 @@
 @import "/imports/ui/stylesheets/variables/_all";
+@import "/imports/ui/components/modal/simple/styles";
+
+:root {
+  --mobile-swap-offset: 3.5rem;
+  --min-modal-height: 20rem;
+}
+
+.modal {
+  @extend .modal;
+  padding: var(--jumbo-padding-y);
+  min-height: var(--min-modal-height);
+  text-align: center;
+}
+
+.overlay {
+  @extend .overlay;
+}
+
+.title {
+  font-weight: var(--headings-font-weight);
+  font-size: var(--font-size-large);
+  color: var(--color-background);
+  white-space: normal;
+  padding-bottom: var(--md-padding-x);
+}
 
 .actionsbar,
-.left,
 .center,
 .right {
   display: flex;
   flex-direction: row;
 }
 
-.left,
 .center,
 .right {
   flex: 1;
   justify-content: center;
+}
 
+.left,
+.center,
+.right {
   > * {
     margin: 0 var(--sm-padding-x);
 
@@ -24,7 +51,8 @@
 }
 
 .left {
-  position: absolute;
+  display: inherit;
+  flex: 0;
   @include mq($small-only) {
     bottom: var(--sm-padding-x);
     left: var(--sm-padding-x);
@@ -52,6 +80,17 @@
 .centerWithActions {
   @include mq($xsmall-only) {
     justify-content: flex-end;
+  }
+}
+
+.mobileLayoutSwapped {
+  @include mq($xsmall-only) {
+    padding-right: var(--mobile-swap-offset);
+
+    [dir="rtl"] & {
+      padding-right: 0;
+      padding-left: var(--mobile-swap-offset);
+    }
   }
 }
 

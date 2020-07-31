@@ -1,31 +1,26 @@
 import React, { Component } from 'react';
 import { Session } from 'meteor/session';
 import PropTypes from 'prop-types';
+import SanitizeHTML from 'sanitize-html';
 import Auth from '/imports/ui/services/auth';
-import { setCustomLogoUrl } from '/imports/ui/components/user-list/service';
+import { setCustomLogoUrl, setModeratorOnlyMessage } from '/imports/ui/components/user-list/service';
 import { makeCall } from '/imports/ui/services/api';
-import deviceInfo from '/imports/utils/deviceInfo';
 import logger from '/imports/startup/client/logger';
 import LoadingScreen from '/imports/ui/components/loading-screen/component';
+import Users from '/imports/api/users';
 
 const propTypes = {
   children: PropTypes.element.isRequired,
 };
 
-const APP_CONFIG = Meteor.settings.public.app;
-const { showParticipantsOnLogin } = APP_CONFIG;
-const CHAT_ENABLED = Meteor.settings.public.chat.enabled;
-
 class JoinHandler extends Component {
   static setError(codeError) {
-    Session.set('hasError', true);
     if (codeError) Session.set('codeError', codeError);
   }
 
   constructor(props) {
     super(props);
     this.fetchToken = this.fetchToken.bind(this);
-    this.numFetchTokenRetries = 0;
 
     this.state = {
       joined: false,
@@ -34,7 +29,51 @@ class JoinHandler extends Component {
 
   componentDidMount() {
     this._isMounted = true;
-    this.fetchToken();
+
+    if (!this.firstJoinTime) {
+      this.firstJoinTime = new Date();
+    }
+    Tracker.autorun((c) => {
+      const {
+        connected,
+        status,
+      } = Meteor.status();
+
+      logger.debug(`Initial connection status change. status: ${status}, connected: ${connected}`);
+      if (connected) {
+        c.stop();
+
+        const msToConnect = (new Date() - this.firstJoinTime) / 1000;
+        const secondsToConnect = parseFloat(msToConnect).toFixed(2);
+
+        logger.info({
+          logCode: 'joinhandler_component_initial_connection_time',
+          extraInfo: {
+            attemptForUserInfo: Auth.fullInfo,
+            timeToConnect: secondsToConnect,
+          },
+        }, `Connection to Meteor took ${secondsToConnect}s`);
+
+        this.firstJoinTime = undefined;
+        this.fetchToken();
+      } else if (status === 'failed') {
+        c.stop();
+
+        const msToConnect = (new Date() - this.firstJoinTime) / 1000;
+        const secondsToConnect = parseFloat(msToConnect).toFixed(2);
+        logger.info({
+          logCode: 'joinhandler_component_initial_connection_failed',
+          extraInfo: {
+            attemptForUserInfo: Auth.fullInfo,
+            timeToConnect: secondsToConnect,
+          },
+        }, `Connection to Meteor failed, took ${secondsToConnect}s`);
+
+        JoinHandler.setError('400');
+        Session.set('errorMessageDescription', 'Failed to connect to server');
+        this.firstJoinTime = undefined;
+      }
+    });
   }
 
   componentWillUnmount() {
@@ -44,20 +83,6 @@ class JoinHandler extends Component {
   async fetchToken() {
     if (!this._isMounted) return;
 
-    if (!Meteor.status().connected) {
-      if (this.numFetchTokenRetries > 9) {
-        logger.error({
-          logCode: 'joinhandler_component_fetchToken_not_connected',
-          extraInfo: {
-            numFetchTokenRetries: this.numFetchTokenRetries,
-          },
-        }, 'Meteor was not connected, retry in a few moments');
-      }
-      this.numFetchTokenRetries += 1;
-
-      setTimeout(() => this.fetchToken(), 200);
-      return;
-    }
     const urlParams = new URLSearchParams(window.location.search);
     const sessionToken = urlParams.get('sessionToken');
 
@@ -115,14 +140,27 @@ class JoinHandler extends Component {
       return resp;
     };
 
+    const setModOnlyMessage = (resp) => {
+      if (resp && resp.modOnlyMessage) {
+        const sanitizedModOnlyText = SanitizeHTML(resp.modOnlyMessage, {
+          allowedTags: ['b', 'strong', 'i', 'u', 'a', 'br', 'img'],
+          allowedAttributes: {
+            a: ['href', 'name', 'target'],
+            img: ['src'],
+          },
+          allowedSchemes: ['https'],
+        });
+        setModeratorOnlyMessage(sanitizedModOnlyText);
+      }
+      return resp;
+    };
+
     const setCustomData = (resp) => {
-      const {
-        meetingID, internalUserID, customdata,
-      } = resp;
+      const { customdata } = resp;
 
       return new Promise((resolve) => {
         if (customdata.length) {
-          makeCall('addUserSettings', meetingID, internalUserID, customdata).then(r => resolve(r));
+          makeCall('addUserSettings', customdata).then(r => resolve(r));
         }
         resolve(true);
       });
@@ -143,21 +181,20 @@ class JoinHandler extends Component {
 
     if (response.returncode !== 'FAILED') {
       await setAuth(response);
-      await setCustomData(response);
 
       setBannerProps(response);
       setLogoURL(response);
+      setModOnlyMessage(response);
       logUserInfo();
 
-      if (showParticipantsOnLogin && !deviceInfo.type().isPhone) {
-        Session.set('openPanel', 'userlist');
-        if (CHAT_ENABLED) {
-          Session.set('openPanel', 'chat');
-          Session.set('idChatOpen', '');
+      Tracker.autorun(async (cd) => {
+        const user = Users.findOne({ userId: Auth.userID, approved: true }, { fields: { _id: 1 } });
+
+        if (user) {
+          await setCustomData(response);
+          cd.stop();
         }
-      } else {
-        Session.set('openPanel', '');
-      }
+      });
 
       logger.info({
         logCode: 'joinhandler_component_joinroutehandler_success',

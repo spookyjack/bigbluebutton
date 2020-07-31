@@ -4,7 +4,7 @@ import React, { Fragment } from 'react';
 import { defineMessages, injectIntl } from 'react-intl';
 import _ from 'lodash';
 import Auth from '/imports/ui/services/auth';
-import Meetings from '/imports/api/meetings';
+import Meetings, { MeetingTimeRemaining } from '/imports/api/meetings';
 import Users from '/imports/api/users';
 import BreakoutRemainingTime from '/imports/ui/components/breakout-room/breakout-remaining-time/container';
 import SlowConnection from '/imports/ui/components/slow-connection/component';
@@ -28,6 +28,9 @@ const SLOW_CONNECTIONS_TYPES = METEOR_SETTINGS_APP.effectiveConnection;
 const ENABLE_NETWORK_MONITORING = Meteor.settings.public.networkMonitoring.enableNetworkMonitoring;
 
 const HELP_LINK = METEOR_SETTINGS_APP.helpLink;
+
+const REMAINING_TIME_THRESHOLD = METEOR_SETTINGS_APP.remainingTimeThreshold;
+const REMAINING_TIME_ALERT_THRESHOLD = METEOR_SETTINGS_APP.remainingTimeAlertThreshold;
 
 const intlMessages = defineMessages({
   failedMessage: {
@@ -66,13 +69,13 @@ const intlMessages = defineMessages({
     id: 'app.meeting.meetingTimeHasEnded',
     description: 'Message that tells time has ended and meeting will close',
   },
-  alertMeetingEndsUnderOneMinute: {
-    id: 'app.meeting.alertMeetingEndsUnderOneMinute',
-    description: 'Alert that tells that the meeting end under a minute',
+  alertMeetingEndsUnderMinutes: {
+    id: 'app.meeting.alertMeetingEndsUnderMinutes',
+    description: 'Alert that tells that the meeting ends under x minutes',
   },
-  alertBreakoutEndsUnderOneMinute: {
-    id: 'app.meeting.alertBreakoutEndsUnderOneMinute',
-    description: 'Alert that tells that the breakout end under a minute',
+  alertBreakoutEndsUnderMinutes: {
+    id: 'app.meeting.alertBreakoutEndsUnderMinutes',
+    description: 'Alert that tells that the breakout ends under x minutes',
   },
   slowEffectiveConnectionDetected: {
     id: 'app.network.connection.effective.slow',
@@ -130,7 +133,7 @@ export default injectIntl(withTracker(({ intl }) => {
   const { status, connected, retryTime } = Meteor.status();
   const data = {};
 
-  const user = Users.findOne({ userId: Auth.userID });
+  const user = Users.findOne({ userId: Auth.userID }, { fields: { effectiveConnectionType: 1 } });
 
   if (user) {
     const { effectiveConnectionType } = user;
@@ -181,6 +184,8 @@ export default injectIntl(withTracker(({ intl }) => {
   const meetingId = Auth.meetingID;
   const breakouts = breakoutService.getBreakouts();
 
+  const msg = { id: `${intlMessages.alertBreakoutEndsUnderMinutes.id}${REMAINING_TIME_ALERT_THRESHOLD == 1 ? 'Singular' : 'Plural'}` };
+
   if (breakouts.length > 0) {
     const currentBreakout = breakouts.find(b => b.breakoutId === meetingId);
 
@@ -190,30 +195,36 @@ export default injectIntl(withTracker(({ intl }) => {
           breakoutRoom={currentBreakout}
           messageDuration={intlMessages.breakoutTimeRemaining}
           timeEndedMessage={intlMessages.breakoutWillClose}
-          alertMessageUnderOneMinute={
-            intl.formatMessage(intlMessages.alertBreakoutEndsUnderOneMinute)
+          alertMessage={
+            intl.formatMessage(msg, {0: REMAINING_TIME_ALERT_THRESHOLD})
           }
+          alertUnderMinutes={REMAINING_TIME_ALERT_THRESHOLD}
         />
       );
     }
   }
 
-  const Meeting = Meetings.findOne({ meetingId: Auth.meetingID });
+  const meetingTimeRemaining = MeetingTimeRemaining.findOne({ meetingId });
+  const Meeting = Meetings.findOne({ meetingId },
+    { fields: { 'meetingProp.isBreakout': 1 } });
 
-  if (Meeting) {
-    const { timeRemaining } = Meeting.durationProps;
+  if (meetingTimeRemaining && Meeting) {
+    const { timeRemaining } = meetingTimeRemaining;
     const { isBreakout } = Meeting.meetingProp;
-    const underThirtyMin = timeRemaining && timeRemaining <= (30 * 60);
+    const underThirtyMin = timeRemaining && timeRemaining <= (REMAINING_TIME_THRESHOLD * 60);
+
+    const msg = { id: `${intlMessages.alertMeetingEndsUnderMinutes.id}${REMAINING_TIME_ALERT_THRESHOLD == 1 ? 'Singular' : 'Plural'}` };
 
     if (underThirtyMin && !isBreakout) {
       data.message = (
         <BreakoutRemainingTime
-          breakoutRoom={Meeting.durationProps}
+          breakoutRoom={meetingTimeRemaining}
           messageDuration={intlMessages.meetingTimeRemaining}
           timeEndedMessage={intlMessages.meetingWillClose}
-          alertMessageUnderOneMinute={
-            intl.formatMessage(intlMessages.alertMeetingEndsUnderOneMinute)
+          alertMessage={
+            intl.formatMessage(msg, {0: REMAINING_TIME_ALERT_THRESHOLD})
           }
+          alertUnderMinutes={REMAINING_TIME_ALERT_THRESHOLD}
         />
       );
     }

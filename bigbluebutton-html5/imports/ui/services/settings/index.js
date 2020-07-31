@@ -7,7 +7,6 @@ const SETTINGS = [
   'audio',
   'video',
   'cc',
-  'participants',
   'dataSaving',
 ];
 
@@ -35,8 +34,8 @@ class Settings {
 
     // Sets default locale to browser locale
     defaultValues.application.locale = navigator.languages ? navigator.languages[0] : false
-                                       || navigator.language
-                                       || defaultValues.application.locale;
+      || navigator.language
+      || defaultValues.application.locale;
 
     this.setDefault(defaultValues);
   }
@@ -57,14 +56,21 @@ class Settings {
 
   save() {
     Object.keys(this).forEach((k) => {
-      // if (k === '_dataSaving') {
-      //   const { value: { viewParticipantsWebcams } } = this[k];
-      //
-      //   makeCall('userChangedSettings', 'viewParticipantsWebcams', viewParticipantsWebcams);
-      // }
-      // TODO https://github.com/bigbluebutton/bigbluebutton/issue/7774
-
       Storage.setItem(`settings${k}`, this[k].value);
+    });
+
+    const userSettings = {};
+
+    SETTINGS.forEach((e) => {
+      userSettings[e] = this[e];
+    });
+
+    Tracker.autorun((c) => {
+      const { status } = Meteor.status();
+      if (status === 'connected') {
+        c.stop();
+        makeCall('userChangedLocalSettings', userSettings);
+      }
     });
   }
 }
